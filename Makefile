@@ -90,9 +90,11 @@ clean:
 
 # This target generates the compilation database needed by clang-tidy.
 # It runs a full build intercepted by 'bear'.
+# FIX: Force a clean build before running bear to ensure it always has
+# compiler commands to intercept and record.
 compile_commands.json: Makefile
-	@echo "Generating compilation database with bear..."
-	bear -- make all
+	@echo "Generating compilation database with bear (forces a clean build)..."
+	bear -- make clean all
 
 # This is the main analysis target. It depends on the database being present.
 # It runs clang-tidy on all source files.
