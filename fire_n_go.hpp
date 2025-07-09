@@ -30,12 +30,18 @@ extern std::unique_ptr<ThreadPool> global_thread_pool;
  *
  * This function's implementation is in the header because it is a function template.
  *
- * @tparam Callable A concept ensuring the passed type is a callable that can be invoked without arguments.
+ * @tparam Callable The deduced type of the callable object.
  * @param task_name A descriptive name for the task, used for logging.
  * @param task The callable object (lambda, function pointer, etc.) to be executed.
  */
-template<std::invocable<> Callable>
-void fire_and_forget(std::string_view task_name, Callable&& task);
+template<typename Callable>
+void fire_and_forget(std::string_view task_name, Callable&& task)
+    // This requires clause is a more precise way to constrain a forwarding reference.
+    // It ensures that the type, after being perfectly forwarded, is invocable.
+    // - If task is an lvalue, Callable is T&, and the constraint becomes std::invocable<T&>.
+    // - If task is an rvalue, Callable is T, and the constraint becomes std::invocable<T&&>.
+    // This correctly handles both cases.
+    requires std::invocable<Callable&&>;
 
 
 /**
@@ -77,8 +83,10 @@ private:
 
 // --- Template Implementation ---
 
-template<std::invocable<> Callable>
-void fire_and_forget(std::string_view task_name, Callable&& task) {
+template<typename Callable>
+void fire_and_forget(std::string_view task_name, Callable&& task)
+    requires std::invocable<Callable&&>
+{
     if (!global_thread_pool) {
         log::print<log::Level::Error>("TaskRunner", "fire_and_forget called but thread pool is not available.");
         return;

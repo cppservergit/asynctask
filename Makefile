@@ -9,25 +9,31 @@ CXX = g++
 # -O2 is a standard optimization level for release builds.
 CXXFLAGS = -std=c++23 -Wall -Wextra -g -O2
 
+# --- Dependency Generation Flags ---
+# -MMD generates dependency files (.d) for user headers.
+# -MP creates phony targets for headers to prevent errors if a header is deleted.
+DEPFLAGS = -MMD -MP
+
 
 # --- Optional Features ---
 
 # To enable debug-level logs, uncomment the following line.
 # This is independent of the stack trace feature.
-CXXFLAGS += -DENABLE_DEBUG_LOGS=1
+# CXXFLAGS += -DENABLE_DEBUG_LOGS=1
 
 # To enable std::stacktrace on errors, set STACKTRACE to 1.
 # Example: make STACKTRACE=1
 # Note: The logger will only print stack traces if ENABLE_DEBUG_LOGS is also active.
-STACKTRACE ?= 1
+STACKTRACE ?= 0
 
 
 # --- Project Files ---
 # List all your .cpp source files here.
 SRCS = main.cpp fire_n_go.cpp
 
-# Automatically generate object file names from source file names (e.g., main.cpp -> main.o).
+# Automatically generate object file and dependency file names.
 OBJS = $(SRCS:.cpp=.o)
+DEPS = $(SRCS:.cpp=.d)
 
 # --- Executable Name ---
 EXECUTABLE_NAME = test_fngo
@@ -76,11 +82,16 @@ $(EXECUTABLE): $(OBJS)
 	$(CXX) $(OBJS) -o $@ $(LDFLAGS)
 	@echo "Build finished successfully."
 
+# Include the generated dependency files. The '-' before include tells make
+# to ignore errors if the file doesn't exist (e.g., on a clean build).
+-include $(DEPS)
+
 # Pattern rule to compile .cpp files into .o object files.
+# This now includes the DEPFLAGS to generate dependency information.
 # $< is an automatic variable representing the first prerequisite (the .cpp file).
 %.o: %.cpp
 	@echo "Compiling: $<"
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+	$(CXX) $(CXXFLAGS) $(DEPFLAGS) -c $< -o $@
 
 # Target to run the compiled application.
 run: all
@@ -88,10 +99,10 @@ run: all
 	./$(EXECUTABLE)
 
 # Target to clean up the build directory.
-# It now removes object files based on the source list.
+# It now also removes the dependency files (.d).
 clean:
 	@echo "Cleaning up project files..."
-	-$(RM) $(OBJS)
+	-$(RM) $(OBJS) $(DEPS)
 	-$(RM) $(EXECUTABLE)
 	@echo "Cleanup complete."
 
