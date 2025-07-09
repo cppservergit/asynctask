@@ -107,12 +107,12 @@ void fire_and_forget(std::string_view task_name, Callable&& task)
             log::print<Error>("TaskRunner", "A known task failure occurred in '{}': {}", name, error_what);
         }
         // Catch other standard exceptions next.
-        catch (const std::exception& e) {
+        /*NO SONAR*/ catch (const std::exception& e) {
             const char* error_what = e.what();
             log::print<Error>("TaskRunner", "An unknown standard exception caught in task '{}': {}", name, error_what);
         } 
         // Finally, catch anything else to prevent the worker from crashing.
-        catch (...) {
+        /*NO SONAR*/ catch (...) {
             log::print<Error>("TaskRunner", "A non-standard, unknown exception caught in task '{}'", name);
         }
     };

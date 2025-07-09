@@ -9,14 +9,15 @@ namespace { // Anonymous namespace for internal linkage
     // Meyers' Singleton pattern to manage the global thread pool instance.
     // It's thread-safe for initialization and avoids non-const global variables.
     std::unique_ptr<ThreadPool>& get_pool_ptr() {
-        static std::unique_ptr<ThreadPool> global_thread_pool_ptr;
+        // SONARCLOUD FIX: Suppress the warning for this specific, deliberate use of a
+        // static local variable, which is a well-known and safe singleton pattern.
+        /*NOSONAR*/ static std::unique_ptr<ThreadPool> global_thread_pool_ptr;
         return global_thread_pool_ptr;
     }
 
     // RAII manager for the thread pool's lifecycle.
     struct ThreadPoolManager {
         ThreadPoolManager() {
-            // SONARCLOUD FIX: Use C++20 "using enum" to reduce verbosity.
             using enum log::Level;
             size_t num_threads = std::thread::hardware_concurrency();
             if (num_threads == 0) num_threads = 2; // Fallback
@@ -25,7 +26,6 @@ namespace { // Anonymous namespace for internal linkage
         }
 
         ~ThreadPoolManager() {
-            // SONARCLOUD FIX: Use C++20 "using enum" to reduce verbosity.
             using enum log::Level;
             if (get_pool_ptr()) {
                 log::print<Info>("ThreadPool", "Automatic thread pool shutting down...");
@@ -41,9 +41,7 @@ namespace { // Anonymous namespace for internal linkage
         ThreadPoolManager& operator=(ThreadPoolManager&&) = delete;
     };
 
-    // SONARCLOUD FIX: Declare the manager instance as const. Its state does not
-    // change after construction, and its purpose is served by its constructor
-    // and destructor being called at the start and end of the program.
+    // The manager instance ensures the constructor/destructor are called at program start/end.
     const ThreadPoolManager manager_instance;
 
 } // namespace

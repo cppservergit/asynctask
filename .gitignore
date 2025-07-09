@@ -2,6 +2,7 @@
 *.o
 *.exe
 *.a
+*.d
 
 # Doxygen documentation
 docs/
