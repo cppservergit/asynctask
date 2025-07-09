@@ -6,17 +6,14 @@ namespace util {
 
 namespace { // Anonymous namespace for internal linkage
 
-    // SONARCLOUD FIX: To avoid a non-const global variable, the unique_ptr is now a static
-    // local variable inside a getter function. This is a common and safe singleton pattern.
+    // Meyers' Singleton pattern to manage the global thread pool instance.
+    // It's thread-safe for initialization and avoids non-const global variables.
     std::unique_ptr<ThreadPool>& get_pool_ptr() {
         static std::unique_ptr<ThreadPool> global_thread_pool_ptr;
         return global_thread_pool_ptr;
     }
 
-    /**
-     * @struct ThreadPoolManager
-     * @brief Manages the lifecycle of the global thread pool via RAII.
-     */
+    // RAII manager for the thread pool's lifecycle.
     struct ThreadPoolManager {
         ThreadPoolManager() {
             size_t num_threads = std::thread::hardware_concurrency();
@@ -33,16 +30,14 @@ namespace { // Anonymous namespace for internal linkage
             }
         }
 
-        // SONARCLOUD FIX: Explicitly delete copy and move operations for a resource-managing class.
-        // This prevents accidental copies that could lead to double-frees or premature destruction.
+        // Prevent copying/moving of the manager.
         ThreadPoolManager(const ThreadPoolManager&) = delete;
         ThreadPoolManager& operator=(const ThreadPoolManager&) = delete;
         ThreadPoolManager(ThreadPoolManager&&) = delete;
         ThreadPoolManager& operator=(ThreadPoolManager&&) = delete;
     };
 
-    // SONARCLOUD FIX: Removed redundant 'static' keyword. Variables in an anonymous
-    // namespace already have internal linkage.
+    // This static instance guarantees the constructor/destructor are called at program start/end.
     ThreadPoolManager manager_instance;
 
 } // namespace
@@ -78,9 +73,7 @@ void ThreadPool::worker_loop(std::stop_token stoken) {
     while (!stoken.stop_requested()) {
         std::function<void()> task;
         {
-            std::unique_lock<std::mutex> lock(m_queue_mutex);
-            // SONARCLOUD FIX: Lambda now explicitly captures only what it needs ([this, &stoken])
-            // instead of using a broad default capture like [&].
+            std::unique_lock lock(m_queue_mutex);
             m_condition.wait(lock, [this, &stoken] {
                 return stoken.stop_requested() || !m_tasks.empty();
             });

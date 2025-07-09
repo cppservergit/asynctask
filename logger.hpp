@@ -20,10 +20,11 @@
 namespace util::log {
 
 // --- Compile-time configuration for debug logging ---
-#ifndef ENABLE_DEBUG_LOGS
-#define ENABLE_DEBUG_LOGS 0 // Disabled by default for release builds
+#ifdef FNGO_DEBUG_LOGS
+constexpr bool debug_logging_enabled = true;
+#else
+constexpr bool debug_logging_enabled = false;
 #endif
-constexpr bool debug_logging_enabled = (ENABLE_DEBUG_LOGS == 1);
 
 
 // Defines the severity level of a log message.
@@ -62,10 +63,10 @@ void print(std::string_view area, Fmt&& fmt, Args&&... args) {
 #endif
 
     if constexpr (sizeof...(args) > 0) {
-        // SONARCLOUD FIX: Use Class Template Argument Deduction (CTAD) for std::ostream_iterator.
-        // Instead of std::ostream_iterator<char>(synced_out), we can just use std::ostream_iterator(...).
+        // FIX: Revert CTAD for ostream_iterator. We must explicitly specify the
+        // type 'char' because the compiler cannot deduce it from the stream alone.
         std::vformat_to(
-            std::ostream_iterator(synced_out),
+            std::ostream_iterator<char>(synced_out),
             std::forward<Fmt>(fmt),
             std::make_format_args(std::forward<Args>(args)...)
         );

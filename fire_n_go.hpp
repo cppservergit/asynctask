@@ -21,24 +21,9 @@ namespace util {
 // Forward declaration for the ThreadPool class
 class ThreadPool;
 
-// SONARCLOUD FIX: The extern global variable has been removed to avoid non-const globals.
-// Access to the pool is now handled internally within the .cpp file.
-
-/**
- * @brief Dispatches a task to the global thread pool for immediate, asynchronous execution.
- *
- * This function's implementation is in the header because it is a function template.
- *
- * @tparam Callable The deduced type of the callable object.
- * @param task_name A descriptive name for the task, used for logging.
- * @param task The callable object (lambda, function pointer, etc.) to be executed.
- */
-template<typename Callable>
-void fire_and_forget(std::string_view task_name, Callable&& task)
-    // This requires clause is a more precise way to constrain a forwarding reference.
-    // It ensures that the type, after being perfectly forwarded, is invocable.
-    requires std::invocable<Callable&&>;
-
+// Internal-only function to get the singleton instance of the pool.
+// The definition is in fire_n_go.cpp.
+ThreadPool* get_thread_pool_instance();
 
 /**
  * @class ThreadPool
@@ -57,8 +42,15 @@ public:
     ThreadPool(ThreadPool&&) = delete;
     ThreadPool& operator=(ThreadPool&&) = delete;
 
+    // The implementation of this template member function is now directly in the header.
     template<typename F>
-    void enqueue(F&& task);
+    void enqueue(F&& task) {
+        {
+            std::scoped_lock lock(m_queue_mutex);
+            m_tasks.emplace(std::forward<F>(task));
+        }
+        m_condition.notify_one();
+    }
 
 private:
     void start(size_t num_threads);
@@ -71,7 +63,44 @@ private:
     std::stop_source m_stop_source;
 };
 
-// The implementation of template functions must be in the header.
-#include "fire_n_go_impl.inl"
+
+/**
+ * @brief Dispatches a task to the global thread pool for immediate, asynchronous execution.
+ *
+ * The implementation is now directly in the header to resolve linking and ambiguity issues.
+ *
+ * @tparam Callable The deduced type of the callable object.
+ * @param task_name A descriptive name for the task, used for logging.
+ * @param task The callable object (lambda, function pointer, etc.) to be executed.
+ */
+template<typename Callable>
+void fire_and_forget(std::string_view task_name, Callable&& task)
+    // This requires clause is a more precise way to constrain a forwarding reference.
+    requires std::invocable<Callable&&>
+{
+    ThreadPool* pool_instance = get_thread_pool_instance();
+    if (!pool_instance) {
+        log::print<log::Level::Error>("TaskRunner", "fire_and_forget called but thread pool is not available.");
+        return;
+    }
+
+    std::string name_copy(task_name);
+
+    auto wrapped_task = [name = std::move(name_copy), work = std::forward<Callable>(task)]() mutable {
+        using enum log::Level;
+        log::print<Info>("TaskRunner", "Starting task: '{}'", name);
+        try {
+            std::invoke(std::move(work));
+            log::print<Info>("TaskRunner", "Finished task: '{}'", name);
+        } catch (const std::exception& e) {
+            const char* error_what = e.what();
+            log::print<Error>("TaskRunner", "Exception caught in task '{}': {}", name, error_what);
+        } catch (...) {
+            log::print<Error>("TaskRunner", "Unknown exception caught in task '{}'", name);
+        }
+    };
+
+    pool_instance->enqueue(std::move(wrapped_task));
+}
 
 } // namespace util
