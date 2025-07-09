@@ -1,45 +1,58 @@
-// thread_pool.cpp
+// fire_n_go.cpp
 #include "fire_n_go.hpp"
 #include <memory>
 
 namespace util {
 
-// Definition of the global thread pool instance.
-std::unique_ptr<ThreadPool> global_thread_pool;
-
-// --- Automatic Lifecycle Management ---
-
 namespace { // Anonymous namespace for internal linkage
 
-/**
- * @struct ThreadPoolManager
- * @brief Manages the lifecycle of the global thread pool via RAII.
- *
- * A static instance of this struct ensures its constructor runs before main()
- * and its destructor runs after main() returns, automating setup and teardown.
- */
-struct ThreadPoolManager {
-    ThreadPoolManager() {
-        size_t num_threads = std::thread::hardware_concurrency();
-        if (num_threads == 0) num_threads = 2; // Fallback for systems where detection fails.
-        global_thread_pool = std::make_unique<ThreadPool>(num_threads);
-        log::print<log::Level::Info>("ThreadPool", "Automatic thread pool initialized with {} threads.", num_threads);
+    // SONARCLOUD FIX: To avoid a non-const global variable, the unique_ptr is now a static
+    // local variable inside a getter function. This is a common and safe singleton pattern.
+    std::unique_ptr<ThreadPool>& get_pool_ptr() {
+        static std::unique_ptr<ThreadPool> global_thread_pool_ptr;
+        return global_thread_pool_ptr;
     }
 
-    ~ThreadPoolManager() {
-        if (global_thread_pool) {
-            log::print<log::Level::Info>("ThreadPool", "Automatic thread pool shutting down...");
-            // The unique_ptr's reset() calls the ThreadPool destructor.
-            global_thread_pool.reset();
-            log::print<log::Level::Info>("ThreadPool", "Automatic thread pool has been shut down.");
+    /**
+     * @struct ThreadPoolManager
+     * @brief Manages the lifecycle of the global thread pool via RAII.
+     */
+    struct ThreadPoolManager {
+        ThreadPoolManager() {
+            size_t num_threads = std::thread::hardware_concurrency();
+            if (num_threads == 0) num_threads = 2; // Fallback
+            get_pool_ptr() = std::make_unique<ThreadPool>(num_threads);
+            log::print<log::Level::Info>("ThreadPool", "Automatic thread pool initialized with {} threads.", num_threads);
         }
-    }
-};
 
-// This static instance guarantees the constructor/destructor are called.
-static ThreadPoolManager manager_instance;
+        ~ThreadPoolManager() {
+            if (get_pool_ptr()) {
+                log::print<log::Level::Info>("ThreadPool", "Automatic thread pool shutting down...");
+                get_pool_ptr().reset();
+                log::print<log::Level::Info>("ThreadPool", "Automatic thread pool has been shut down.");
+            }
+        }
+
+        // SONARCLOUD FIX: Explicitly delete copy and move operations for a resource-managing class.
+        // This prevents accidental copies that could lead to double-frees or premature destruction.
+        ThreadPoolManager(const ThreadPoolManager&) = delete;
+        ThreadPoolManager& operator=(const ThreadPoolManager&) = delete;
+        ThreadPoolManager(ThreadPoolManager&&) = delete;
+        ThreadPoolManager& operator=(ThreadPoolManager&&) = delete;
+    };
+
+    // SONARCLOUD FIX: Removed redundant 'static' keyword. Variables in an anonymous
+    // namespace already have internal linkage.
+    ThreadPoolManager manager_instance;
 
 } // namespace
+
+// --- Public function to access the pool ---
+// This is the single, controlled point of access for the header's template function.
+ThreadPool* get_thread_pool_instance() {
+    return get_pool_ptr().get();
+}
+
 
 // --- ThreadPool Method Implementations ---
 
@@ -48,17 +61,13 @@ ThreadPool::ThreadPool(size_t num_threads) {
 }
 
 ThreadPool::~ThreadPool() {
-    // Request all threads to stop.
     m_stop_source.request_stop();
-    // Wake up all threads so they can check their stop token.
     m_condition.notify_all();
-    // The std::jthread destructors in m_workers will automatically join.
 }
 
 void ThreadPool::start(size_t num_threads) {
     m_workers.reserve(num_threads);
     for (size_t i = 0; i < num_threads; ++i) {
-        // Create a jthread, passing it a stop_token from our source.
         m_workers.emplace_back([this](std::stop_token stoken) {
             worker_loop(std::move(stoken));
         }, m_stop_source.get_token());
@@ -66,17 +75,16 @@ void ThreadPool::start(size_t num_threads) {
 }
 
 void ThreadPool::worker_loop(std::stop_token stoken) {
-    // Loop until a stop is requested.
     while (!stoken.stop_requested()) {
         std::function<void()> task;
         {
             std::unique_lock<std::mutex> lock(m_queue_mutex);
-            // Wait until there's a task or a stop is requested.
-            m_condition.wait(lock, [&] {
+            // SONARCLOUD FIX: Lambda now explicitly captures only what it needs ([this, &stoken])
+            // instead of using a broad default capture like [&].
+            m_condition.wait(lock, [this, &stoken] {
                 return stoken.stop_requested() || !m_tasks.empty();
             });
 
-            // If a stop was requested and the queue is empty, we can exit.
             if (stoken.stop_requested() && m_tasks.empty()) {
                 return;
             }
@@ -84,7 +92,6 @@ void ThreadPool::worker_loop(std::stop_token stoken) {
             task = std::move(m_tasks.front());
             m_tasks.pop();
         }
-        // Execute the task without holding the lock.
         task();
     }
 }

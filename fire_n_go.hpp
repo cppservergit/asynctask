@@ -21,9 +21,8 @@ namespace util {
 // Forward declaration for the ThreadPool class
 class ThreadPool;
 
-// Declaration of the global pointer. Its definition is in the .cpp file.
-// It must be declared here so the header-only fire_and_forget function can access it.
-extern std::unique_ptr<ThreadPool> global_thread_pool;
+// SONARCLOUD FIX: The extern global variable has been removed to avoid non-const globals.
+// Access to the pool is now handled internally within the .cpp file.
 
 /**
  * @brief Dispatches a task to the global thread pool for immediate, asynchronous execution.
@@ -38,9 +37,6 @@ template<typename Callable>
 void fire_and_forget(std::string_view task_name, Callable&& task)
     // This requires clause is a more precise way to constrain a forwarding reference.
     // It ensures that the type, after being perfectly forwarded, is invocable.
-    // - If task is an lvalue, Callable is T&, and the constraint becomes std::invocable<T&>.
-    // - If task is an rvalue, Callable is T, and the constraint becomes std::invocable<T&&>.
-    // This correctly handles both cases.
     requires std::invocable<Callable&&>;
 
 
@@ -62,13 +58,7 @@ public:
     ThreadPool& operator=(ThreadPool&&) = delete;
 
     template<typename F>
-    void enqueue(F&& task) {
-        {
-            std::scoped_lock lock(m_queue_mutex);
-            m_tasks.emplace(std::forward<F>(task));
-        }
-        m_condition.notify_one();
-    }
+    void enqueue(F&& task);
 
 private:
     void start(size_t num_threads);
@@ -81,35 +71,7 @@ private:
     std::stop_source m_stop_source;
 };
 
-// --- Template Implementation ---
-
-template<typename Callable>
-void fire_and_forget(std::string_view task_name, Callable&& task)
-    requires std::invocable<Callable&&>
-{
-    if (!global_thread_pool) {
-        log::print<log::Level::Error>("TaskRunner", "fire_and_forget called but thread pool is not available.");
-        return;
-    }
-
-    std::string name_copy(task_name);
-
-    auto wrapped_task = [name = std::move(name_copy), work = std::forward<Callable>(task)]() mutable {
-        log::print<log::Level::Info>("TaskRunner", "Starting task: '{}'", name);
-        try {
-            std::invoke(std::move(work));
-            log::print<log::Level::Info>("TaskRunner", "Finished task: '{}'", name);
-        } catch (const std::exception& e) {
-            // FIX: Store the result of e.what() in a local variable to ensure it's an
-            // lvalue, which resolves the template argument binding error.
-            const char* error_what = e.what();
-            log::print<log::Level::Error>("TaskRunner", "Exception caught in task '{}': {}", name, error_what);
-        } catch (...) {
-            log::print<log::Level::Error>("TaskRunner", "Unknown exception caught in task '{}'", name);
-        }
-    };
-
-    global_thread_pool->enqueue(std::move(wrapped_task));
-}
+// The implementation of template functions must be in the header.
+#include "fire_n_go_impl.inl"
 
 } // namespace util
