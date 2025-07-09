@@ -2,30 +2,26 @@
 #include "fire_n_go.hpp"
 #include "logger.hpp"
 #include <chrono>
-#include <stdexcept> // For std::runtime_error
+#include <stdexcept>
 
-// SONARCLOUD FIX: Define and use a dedicated exception type instead of a generic one.
-struct TaskFailure : std::runtime_error {
-    using std::runtime_error::runtime_error;
-};
+// The TaskFailure struct is now defined in fire_n_go.hpp
 
 // A function to simulate work.
 void long_running_database_query() {
-    // SONARCLOUD FIX: Use C++20 "using enum" to reduce verbosity.
     using enum util::log::Level;
     util::log::print<Info>("Database", "Performing database query...");
     std::this_thread::sleep_for(std::chrono::seconds(1));
 }
 
-// A function that intentionally throws an error to test logging.
-void failing_task() {
+// A function that intentionally throws our dedicated exception type.
+// SONARCLOUD FIX: Add [[noreturn]] attribute to signal that this function never returns.
+[[noreturn]] void failing_task() {
     using enum util::log::Level;
     util::log::print<Warning>("FailingTask", "This task is about to throw an exception.");
-    throw TaskFailure("Simulated runtime failure!");
+    throw util::TaskFailure("Simulated runtime failure!");
 }
 
 int main() {
-    // SONARCLOUD FIX: Use C++20 "using enum" to reduce verbosity.
     using enum util::log::Level;
 
     // The ThreadPoolManager handles initialization and shutdown automatically.

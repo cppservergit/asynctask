@@ -36,11 +36,13 @@ enum class Level {
 };
 
 constexpr std::string_view level_to_string(Level level) {
+    // SONARCLOUD FIX: Use C++20 "using enum" to reduce verbosity.
+    using enum Level;
     switch (level) {
-        case Level::Debug:   return "DEBUG";
-        case Level::Info:    return "INFO";
-        case Level::Warning: return "WARNING";
-        case Level::Error:   return "ERROR";
+        case Debug:   return "DEBUG";
+        case Info:    return "INFO";
+        case Warning: return "WARNING";
+        case Error:   return "ERROR";
     }
     return "UNKNOWN";
 }
@@ -48,11 +50,14 @@ constexpr std::string_view level_to_string(Level level) {
 // --- Primary print function ---
 template<Level level, typename Fmt, typename... Args>
 void print(std::string_view area, Fmt&& fmt, Args&&... args) {
-    if constexpr (level == Level::Debug && !debug_logging_enabled) {
+    // SONARCLOUD FIX: Use C++20 "using enum" to reduce verbosity.
+    using enum Level;
+
+    if constexpr (level == Debug && !debug_logging_enabled) {
         return;
     }
 
-    std::osyncstream synced_out(level == Level::Error ? std::cerr : std::cout);
+    std::osyncstream synced_out(level == Error ? std::cerr : std::cout);
     
 #if defined(__GNUC__) && !defined(__clang__) && __GNUC__ < 14
     std::stringstream thread_id_ss;
@@ -63,8 +68,6 @@ void print(std::string_view area, Fmt&& fmt, Args&&... args) {
 #endif
 
     if constexpr (sizeof...(args) > 0) {
-        // FIX: Revert CTAD for ostream_iterator. We must explicitly specify the
-        // type 'char' because the compiler cannot deduce it from the stream alone.
         std::vformat_to(
             std::ostream_iterator<char>(synced_out),
             std::forward<Fmt>(fmt),
@@ -77,7 +80,7 @@ void print(std::string_view area, Fmt&& fmt, Args&&... args) {
     synced_out << '\n';
 
     #ifdef USE_STACKTRACE
-    if constexpr (level == Level::Error && debug_logging_enabled) {
+    if constexpr (level == Error && debug_logging_enabled) {
         synced_out << "--- Stack Trace ---\n" << std::stacktrace::current() << "-------------------\n";
     }
     #endif

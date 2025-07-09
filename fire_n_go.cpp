@@ -16,17 +16,21 @@ namespace { // Anonymous namespace for internal linkage
     // RAII manager for the thread pool's lifecycle.
     struct ThreadPoolManager {
         ThreadPoolManager() {
+            // SONARCLOUD FIX: Use C++20 "using enum" to reduce verbosity.
+            using enum log::Level;
             size_t num_threads = std::thread::hardware_concurrency();
             if (num_threads == 0) num_threads = 2; // Fallback
             get_pool_ptr() = std::make_unique<ThreadPool>(num_threads);
-            log::print<log::Level::Info>("ThreadPool", "Automatic thread pool initialized with {} threads.", num_threads);
+            log::print<Info>("ThreadPool", "Automatic thread pool initialized with {} threads.", num_threads);
         }
 
         ~ThreadPoolManager() {
+            // SONARCLOUD FIX: Use C++20 "using enum" to reduce verbosity.
+            using enum log::Level;
             if (get_pool_ptr()) {
-                log::print<log::Level::Info>("ThreadPool", "Automatic thread pool shutting down...");
+                log::print<Info>("ThreadPool", "Automatic thread pool shutting down...");
                 get_pool_ptr().reset();
-                log::print<log::Level::Info>("ThreadPool", "Automatic thread pool has been shut down.");
+                log::print<Info>("ThreadPool", "Automatic thread pool has been shut down.");
             }
         }
 
@@ -37,8 +41,10 @@ namespace { // Anonymous namespace for internal linkage
         ThreadPoolManager& operator=(ThreadPoolManager&&) = delete;
     };
 
-    // This static instance guarantees the constructor/destructor are called at program start/end.
-    ThreadPoolManager manager_instance;
+    // SONARCLOUD FIX: Declare the manager instance as const. Its state does not
+    // change after construction, and its purpose is served by its constructor
+    // and destructor being called at the start and end of the program.
+    const ThreadPoolManager manager_instance;
 
 } // namespace
 

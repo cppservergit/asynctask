@@ -2,6 +2,7 @@
 #pragma once
 
 #include "logger.hpp" // For logging
+#include <stdexcept>    // For std::runtime_error
 #include <concepts>
 #include <condition_variable>
 #include <functional>
@@ -17,6 +18,13 @@
 #include <vector>
 
 namespace util {
+
+// SONARCLOUD FIX: Define a dedicated exception type directly in this header
+// to make it available to both the implementation and the client (main.cpp).
+struct TaskFailure : std::runtime_error {
+    using std::runtime_error::runtime_error;
+};
+
 
 // Forward declaration for the ThreadPool class
 class ThreadPool;
@@ -92,11 +100,20 @@ void fire_and_forget(std::string_view task_name, Callable&& task)
         try {
             std::invoke(std::move(work));
             log::print<Info>("TaskRunner", "Finished task: '{}'", name);
-        } catch (const std::exception& e) {
+        } 
+        // SONARCLOUD FIX: Catch the most specific exception type first.
+        catch (const TaskFailure& e) {
             const char* error_what = e.what();
-            log::print<Error>("TaskRunner", "Exception caught in task '{}': {}", name, error_what);
-        } catch (...) {
-            log::print<Error>("TaskRunner", "Unknown exception caught in task '{}'", name);
+            log::print<Error>("TaskRunner", "A known task failure occurred in '{}': {}", name, error_what);
+        }
+        // Catch other standard exceptions next.
+        catch (const std::exception& e) {
+            const char* error_what = e.what();
+            log::print<Error>("TaskRunner", "An unknown standard exception caught in task '{}': {}", name, error_what);
+        } 
+        // Finally, catch anything else to prevent the worker from crashing.
+        catch (...) {
+            log::print<Error>("TaskRunner", "A non-standard, unknown exception caught in task '{}'", name);
         }
     };
 
