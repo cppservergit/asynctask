@@ -18,7 +18,9 @@ namespace { // Anonymous namespace for internal linkage
 
     // Mutex to protect the lazy initialization of the thread pool.
     std::mutex& get_pool_init_mutex() {
-        static std::mutex pool_init_mutex;
+        // SONARCLOUD FIX: Suppress the warning for this specific, deliberate use of a
+        // static local variable, which is a well-known and safe singleton pattern.
+        /*NOSONAR*/ static std::mutex pool_init_mutex;
         return pool_init_mutex;
     }
 
