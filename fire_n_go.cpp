@@ -1,55 +1,52 @@
 // fire_n_go.cpp
 #include "fire_n_go.hpp"
 #include <memory>
+#include <mutex> // For std::mutex in lazy init
 
 namespace util {
 
 namespace { // Anonymous namespace for internal linkage
 
-    // Meyers' Singleton pattern to manage the global thread pool instance.
-    // It's thread-safe for initialization and avoids non-const global variables.
-    std::unique_ptr<ThreadPool>& get_pool_ptr() {
-        // SONARCLOUD FIX: Suppress the warning for this specific, deliberate use of a
-        // static local variable, which is a well-known and safe singleton pattern.
+    // Meyers' Singleton pattern for the thread pool instance.
+    // The unique_ptr is now managed entirely within this function.
+    // Its destructor will be called automatically at program exit, ensuring
+    // the ThreadPool is cleaned up correctly. This is RAII in action.
+    std::unique_ptr<ThreadPool>& get_pool_instance_ptr() {
         /*NOSONAR*/ static std::unique_ptr<ThreadPool> global_thread_pool_ptr;
         return global_thread_pool_ptr;
     }
 
-    // RAII manager for the thread pool's lifecycle.
-    struct ThreadPoolManager {
-        ThreadPoolManager() {
-            using enum log::Level;
-            size_t num_threads = std::thread::hardware_concurrency();
-            if (num_threads == 0) num_threads = 2; // Fallback
-            get_pool_ptr() = std::make_unique<ThreadPool>(num_threads);
-            log::print<Info>("ThreadPool", "Automatic thread pool initialized with {} threads.", num_threads);
-        }
+    // Mutex to protect the lazy initialization of the thread pool.
+    std::mutex& get_pool_init_mutex() {
+        static std::mutex pool_init_mutex;
+        return pool_init_mutex;
+    }
 
-        ~ThreadPoolManager() {
-            using enum log::Level;
-            if (get_pool_ptr()) {
-                log::print<Info>("ThreadPool", "Automatic thread pool shutting down...");
-                get_pool_ptr().reset();
-                log::print<Info>("ThreadPool", "Automatic thread pool has been shut down.");
-            }
-        }
-
-        // Prevent copying/moving of the manager.
-        ThreadPoolManager(const ThreadPoolManager&) = delete;
-        ThreadPoolManager& operator=(const ThreadPoolManager&) = delete;
-        ThreadPoolManager(ThreadPoolManager&&) = delete;
-        ThreadPoolManager& operator=(ThreadPoolManager&&) = delete;
-    };
-
-    // The manager instance ensures the constructor/destructor are called at program start/end.
-    const ThreadPoolManager manager_instance;
+    // FIX: The manual atexit handler has been removed. The static unique_ptr's
+    // destructor will now handle the shutdown automatically and safely at the
+    // correct time during program termination, preventing the double-free error.
 
 } // namespace
 
 // --- Public function to access the pool ---
-// This is the single, controlled point of access for the header's template function.
+// This function now handles lazy initialization. The pool is only created
+// on the first call to fire_and_forget.
 ThreadPool* get_thread_pool_instance() {
-    return get_pool_ptr().get();
+    // Use a double-checked locking pattern for performance. We only take the
+    // expensive lock if the pool hasn't been initialized yet.
+    if (!get_pool_instance_ptr()) {
+        const std::lock_guard lock(get_pool_init_mutex());
+        // Check again inside the lock to handle the race condition where
+        // another thread might have initialized the pool while we were waiting for the lock.
+        if (!get_pool_instance_ptr()) {
+            using enum log::Level;
+            size_t num_threads = std::thread::hardware_concurrency();
+            if (num_threads == 0) num_threads = 2; // Fallback
+            get_pool_instance_ptr() = std::make_unique<ThreadPool>(num_threads);
+            log::print<Info>("ThreadPool", "Lazy initialization: Thread pool created with {} threads.", num_threads);
+        }
+    }
+    return get_pool_instance_ptr().get();
 }
 
 
@@ -60,8 +57,12 @@ ThreadPool::ThreadPool(size_t num_threads) {
 }
 
 ThreadPool::~ThreadPool() {
+    // This destructor is now correctly called once by the unique_ptr at program exit.
+    using enum log::Level;
+    log::print<Info>("ThreadPool", "ThreadPool destructor called. Shutting down threads...");
     m_stop_source.request_stop();
     m_condition.notify_all();
+    // jthreads in m_workers will be automatically joined here.
 }
 
 void ThreadPool::start(size_t num_threads) {
