@@ -1,12 +1,14 @@
 # Makefile for the C++23 fire_n_go Project
-# This Makefile includes automatic dependency generation and a 'tidy' target
-# for running clang-tidy static analysis.
+# This Makefile includes automatic dependency generation to correctly recompile
+# files when headers are changed.
 
 # --- Compiler and Flags ---
 CXX = g++
 CXXFLAGS = -std=c++23 -Wall -Wextra -g -O2
 
 # --- Dependency Generation Flags ---
+# -MMD: Generate dependency files (.d) for user headers.
+# -MP:  Create phony targets for headers to prevent errors if a header is deleted.
 DEPFLAGS = -MMD -MP
 
 
@@ -23,7 +25,7 @@ STACKTRACE ?= 0
 # --- Project Files ---
 SRCS = main.cpp fire_n_go.cpp
 OBJS = $(SRCS:.cpp=.o)
-DEPS = $(SRCS:.cpp=.d)
+DEPS = $(SRCS:.cpp=.d) # These are the dependency files we will generate.
 
 
 # --- Executable Name ---
@@ -81,28 +83,10 @@ run: all
 # Target to clean up the build directory.
 clean:
 	@echo "Cleaning up project files..."
-	-$(RM) $(OBJS) $(DEPS) compile_commands.json
+	-$(RM) $(OBJS) $(DEPS)
 	-$(RM) $(EXECUTABLE)
 	@echo "Cleanup complete."
 
-
-# --- Static Analysis Target ---
-
-# This target generates the compilation database needed by clang-tidy.
-# It runs a full build intercepted by 'bear'.
-# FIX: Force a clean build before running bear to ensure it always has
-# compiler commands to intercept and record.
-compile_commands.json: Makefile
-	@echo "Generating compilation database with bear (forces a clean build)..."
-	bear -- make clean all
-
-# This is the main analysis target. It depends on the database being present.
-# It runs clang-tidy on all source files.
-tidy: compile_commands.json
-	@echo "Running clang-tidy analysis..."
-	clang-tidy -p . $(SRCS)
-
-
 # Phony targets are ones that don't represent actual files.
-.PHONY: all clean run tidy
+.PHONY: all clean run
 
